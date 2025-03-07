@@ -110,33 +110,62 @@ async def update_user(req, res):
     """Update a user"""
     try:
         data = await req.json()
-        user = User.objects().filter(id=req.path_params['id']).first()
+        user_id = req.path_params.get('id')
+        if not user_id:
+            return await res.json({"error": "User ID is required"}, status=400)
+
+        user = User.objects().filter(id=user_id).first()
         
         if not user:
             return await res.json({"error": "User not found"}, status=404)
         
-        for key, value in data.items():
+        # Validate email uniqueness if it's being updated
+        if 'email' in data and data['email'] != user.email:
+            existing = User.objects().filter(email=data['email']).first()
+            if existing:
+                return await res.json({
+                    "error": "Email already exists"
+                }, status=400)
+
+        # Update only allowed fields
+        allowed_fields = {'name', 'email'}
+        update_data = {k: v for k, v in data.items() if k in allowed_fields}
+        
+        if not update_data:
+            return await res.json({"error": "No valid fields to update"}, status=400)
+        
+        for key, value in update_data.items():
             setattr(user, key, value)
         
         user.save()
         return await res.json({
             "message": "User updated successfully",
-            "user": vars(user)
+            "user": user.to_dict()
         })
     except Exception as e:
+        logger.error(f"Update user error: {str(e)}")
         return await res.json({"error": str(e)}, status=400)
 
 @app.route("/api/users/{id}", methods=["DELETE"])
 async def delete_user(req, res):
     """Delete a user"""
-    user = User.objects().filter(id=req.path_params['id']).first()
-    
-    if not user:
-        return await res.json({"error": "User not found"}, status=404)
-    
-    user.delete()
-    return await res.json({
-        "message": "User deleted successfully"
-    })
+    try:
+        user_id = req.path_params.get('id')
+        if not user_id:
+            return await res.json({"error": "User ID is required"}, status=400)
+
+        user = User.objects().filter(id=user_id).first()
+        
+        if not user:
+            return await res.json({"error": "User not found"}, status=404)
+        
+        user.delete()
+        return await res.json({
+            "message": "User deleted successfully",
+            "id": user_id
+        })
+    except Exception as e:
+        logger.error(f"Delete user error: {str(e)}")
+        return await res.json({"error": str(e)}, status=400)
 
 # Add your routes here 

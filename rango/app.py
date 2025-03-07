@@ -61,7 +61,14 @@ class App:
                 from .response import SimpleResponse
                 
                 simple_request = SimpleRequest(request)
-                simple_request.path_params = {}  # Initialize path params
+                
+                # Extract path parameters
+                match_info = request.match_info
+                simple_request.path_params = dict(match_info)
+                
+                # Parse body for POST/PUT requests
+                if method in ['POST', 'PUT', 'PATCH']:
+                    await simple_request.parse_body(request)
                 
                 # Use the handler directly since we're already in the correct route
                 response = await handler(simple_request, SimpleResponse)
@@ -81,9 +88,15 @@ class App:
                         'error': 'Internal Server Error'
                     }, status=500)
 
-        # Add route directly to aiohttp app
-        self.app.router.add_route(method, path, wrapped_handler)
-        logger.debug(f"Added route: {method} {path}")
+        # Convert path parameters from {param} to {param:.*} for aiohttp
+        path_pattern = path
+        if '{' in path:
+            import re
+            path_pattern = re.sub(r'{([^:}]+)}', r'{\1:[^/]*}', path)
+
+        # Add route to aiohttp app
+        self.app.router.add_route(method, path_pattern, wrapped_handler)
+        logger.debug(f"Added route: {method} {path} -> {path_pattern}")
 
     def run(self, host="127.0.0.1", port=8000, production=False):
         if production and not self.debug:

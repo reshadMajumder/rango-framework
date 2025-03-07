@@ -221,14 +221,27 @@ class Model:
 
     def delete(self):
         try:
-            if hasattr(self, 'id'):
-                self.objects().db.delete(
-                    self._meta.table_name,
-                    "id = ?",
-                    (self.id,)
-                )
+            if not hasattr(self, 'id') or self.id is None:
+                raise ValueError("Cannot delete object without ID")
+
+            db = self.objects().db
+            # Check if record exists before delete
+            exists = db.get_one(
+                f"SELECT 1 FROM {self._meta.table_name} WHERE id = ?",
+                (self.id,)
+            )
+            if not exists:
+                raise ValueError(f"Record with id {self.id} does not exist")
+
+            db.delete(
+                self._meta.table_name,
+                "id = ?",
+                (self.id,)
+            )
         except Exception as e:
             logger.error(f"Delete error: {str(e)}")
+            if isinstance(e, web.HTTPException):
+                raise
             raise web.HTTPBadRequest(text=str(e))
 
     @classmethod
