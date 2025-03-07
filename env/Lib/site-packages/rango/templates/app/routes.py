@@ -1,5 +1,8 @@
 from . import app
-from .models import db
+from .models import User, Product
+import logging
+
+logger = logging.getLogger(__name__)
 
 @app.route("/")
 async def index(req, res):
@@ -18,24 +21,29 @@ async def health_check(req, res):
     """Health check endpoint"""
     return await res.json({
         "status": "healthy",
-        "database": "connected" if db.is_connected() else "disconnected",
-        "timestamp": str(db.cursor.execute("SELECT datetime('now')").fetchone()[0])
+        "timestamp": str(app.orm.cursor.execute("SELECT datetime('now')").fetchone()[0])
     })
 
 # User CRUD Operations
 @app.route("/api/users", methods=["GET"])
 async def get_users(req, res):
     """Get all users"""
-    users = db.query("SELECT * FROM users")
-    return await res.json({"users": users})
+    try:
+        users = User.objects().all()
+        return await res.json({"users": [user.to_dict() for user in users]})
+    except Exception as e:
+        return await res.json({"error": str(e)}, status=500)
 
 @app.route("/api/users/{id}", methods=["GET"])
 async def get_user(req, res):
     """Get a single user"""
-    user = db.get_one("SELECT * FROM users WHERE id = ?", (req.path_params['id'],))
-    if not user:
-        return await res.json({"error": "User not found"}, status=404)
-    return await res.json({"user": user})
+    try:
+        user = User.objects().filter(id=req.path_params['id']).first()
+        if not user:
+            return await res.json({"error": "User not found"}, status=404)
+        return await res.json({"user": user.to_dict()})
+    except Exception as e:
+        return await res.json({"error": str(e)}, status=500)
 
 @app.route("/api/users", methods=["POST"])
 async def create_user(req, res):
@@ -43,19 +51,30 @@ async def create_user(req, res):
     try:
         data = await req.json()
         
-        # Handle both single and bulk creation
         if isinstance(data, list):
             # Bulk creation
+            users = []
             for item in data:
                 if not all(k in item for k in ('name', 'email')):
                     return await res.json({
                         "error": "Each user must have name and email"
                     }, status=400)
+                try:
+                    # Remove id if it's None
+                    if 'id' in item and item['id'] is None:
+                        del item['id']
+                    user = User(**item)
+                    user.save()
+                    users.append(user)
+                except Exception as e:
+                    logger.error(f"Error creating user: {str(e)}")
+                    return await res.json({
+                        "error": str(e)
+                    }, status=400)
             
-            user_ids = db.insert('users', data)
             return await res.json({
-                "message": f"{len(data)} users created successfully",
-                "users": data
+                "message": f"{len(users)} users created successfully",
+                "users": [user.to_dict() for user in users]
             }, status=201)
         else:
             # Single creation
@@ -64,13 +83,24 @@ async def create_user(req, res):
                     "error": "Missing required fields: name, email"
                 }, status=400)
             
-            user_id = db.insert('users', data)
-            data['id'] = user_id
-            return await res.json({
-                "message": "User created successfully",
-                "user": data
-            }, status=201)
+            try:
+                # Remove id if it's None
+                if 'id' in data and data['id'] is None:
+                    del data['id']
+                user = User(**data)
+                user.save()
+                
+                return await res.json({
+                    "message": "User created successfully",
+                    "user": user.to_dict()
+                }, status=201)
+            except Exception as e:
+                logger.error(f"Error creating user: {str(e)}")
+                return await res.json({
+                    "error": str(e)
+                }, status=400)
     except Exception as e:
+        logger.error(f"Create user error: {str(e)}")
         return await res.json({
             "error": str(e)
         }, status=400)
@@ -80,22 +110,18 @@ async def update_user(req, res):
     """Update a user"""
     try:
         data = await req.json()
-        user_id = req.path_params['id']
+        user = User.objects().filter(id=req.path_params['id']).first()
         
-        # Check if user exists
-        if not db.get_one("SELECT 1 FROM users WHERE id = ?", (user_id,)):
+        if not user:
             return await res.json({"error": "User not found"}, status=404)
         
-        rows_affected = db.update(
-            'users',
-            data,
-            "id = ?",
-            (user_id,)
-        )
+        for key, value in data.items():
+            setattr(user, key, value)
         
+        user.save()
         return await res.json({
             "message": "User updated successfully",
-            "user": {**data, "id": user_id}
+            "user": vars(user)
         })
     except Exception as e:
         return await res.json({"error": str(e)}, status=400)
@@ -103,13 +129,12 @@ async def update_user(req, res):
 @app.route("/api/users/{id}", methods=["DELETE"])
 async def delete_user(req, res):
     """Delete a user"""
-    user_id = req.path_params['id']
+    user = User.objects().filter(id=req.path_params['id']).first()
     
-    # Check if user exists
-    if not db.get_one("SELECT 1 FROM users WHERE id = ?", (user_id,)):
+    if not user:
         return await res.json({"error": "User not found"}, status=404)
     
-    db.delete('users', "id = ?", (user_id,))
+    user.delete()
     return await res.json({
         "message": "User deleted successfully"
     })

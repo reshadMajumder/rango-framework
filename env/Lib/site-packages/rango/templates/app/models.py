@@ -1,23 +1,26 @@
-from rango import ORM
+from rango.models import Model, IntegerField, TextField, DateTimeField
 
-# Initialize the ORM
-db = ORM()
+class User(Model):
+    id = IntegerField(primary_key=True)
+    name = TextField(null=False)
+    email = TextField(null=False, unique=True)
 
-# Define your models here
+    class Meta:
+        table_name = 'users'
+
+class Product(Model):
+    id = IntegerField(primary_key=True)
+    name = TextField(null=False)
+    price = IntegerField(null=False)
+    created_at = DateTimeField(auto_now=True)
+
+    class Meta:
+        table_name = 'products'
+
 def init_db():
     """Initialize database tables"""
-    db.create_table("users", {
-        "id": "INTEGER PRIMARY KEY",
-        "name": "TEXT NOT NULL",
-        "email": "TEXT UNIQUE NOT NULL"
-    })
-
-    db.create_table("products", {
-        "id": "INTEGER PRIMARY KEY",
-        "name": "TEXT NOT NULL",
-        "price": "REAL NOT NULL",
-        "created_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
-    })
+    User.create_table()
+    Product.create_table()
 
 if __name__ == "__main__":
     init_db() 

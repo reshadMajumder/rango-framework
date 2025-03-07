@@ -1,10 +1,8 @@
 from rango import App
-from .models import db  # Import db instance
 
 app = App()
-app.orm = db  # Set the app's ORM instance
 
-# Import routes
+# Import routes after app is created
 from .routes import *
 
 if __name__ == "__main__":

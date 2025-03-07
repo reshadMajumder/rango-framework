@@ -7,19 +7,31 @@ import traceback
 import logging
 from .router import SimpleRouter
 from .orm import ORM
+from typing import Optional
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Add at the top level of the file
+_global_app: Optional['App'] = None
+
+def get_app() -> 'App':
+    """Get the global app instance"""
+    if _global_app is None:
+        raise RuntimeError("App not initialized. Create an App instance first.")
+    return _global_app
+
 class App:
     def __init__(self, debug=True):
+        global _global_app
         self.router = SimpleRouter()
         self.app = web.Application()
         self.orm = ORM()
         self.app.on_shutdown.append(self._cleanup)
         self.debug = debug
         self._setup_logging()
+        _global_app = self  # Store the app instance globally
 
     def _setup_logging(self):
         # Configure aiohttp access logger properly
